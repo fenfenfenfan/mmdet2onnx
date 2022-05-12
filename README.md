@@ -2,11 +2,17 @@ ONNX
 
 ##### [Tutorial 8: Pytorch to ONNX (Experimental) — MMDetection 2.24.1 documentation](https://mmdetection.readthedocs.io/en/latest/tutorials/pytorch2onnx.html)
 
+- 完成onnx模型转换
+- 实现后处理Topk以及NMS
+- 可视化结果
+
+
+
 # 1.生成onnx文件（ATSS）
 
 - [点击下载](https://download.openmmlab.com/mmdetection/v2.0/atss/atss_r50_fpn_1x_coco/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth)，放在mmdetection/checkpoint中
 
-- mmdetection/configs/atss/atss.py暂时无法在文档外展示此内容
+- mmdetection/configs/atss/atss.py
 
 #### 测试环境
 
@@ -25,19 +31,21 @@ pip install onnxruntime
 
 # atss2onnx
 # with postprocess
-python tools/deployment/pytorch2onnx.py configs/atss/atss.py checkpoints/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth --output-file checkpoints/atss_coco.onnx --input-img /mmdetection/coco/COCO_train2014_000000000009.jpg --test-img /mmdetection/coco/COCO_train2014_000000000009.jpg --shape 608 608 --verify --dynamic-export --cfg-options model.test_cfg.deploy_nms_pre=-1
+python tools/deployment/pytorch2onnx.py configs/atss/atss.py checkpoint/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth --output-file checkpoint/atss_coco.onnx --input-img /mmdetection/coco/COCO_train2014_000000000009.jpg --test-img /mmdetection/coco/COCO_train2014_000000000009.jpg --shape 608 608 --verify --dynamic-export --cfg-options model.test_cfg.deploy_nms_pre=-1
 # 去除post process
 python tools/deployment/pytorch2onnx.py configs/atss/atss_coco.py checkpoint/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth --output-file checkpoint/atss_r50_fpn_1x_coco_no_postprocess408.onnx --input-img data/traffic/task11_origin/data/train_images/13021_1647589563476.png --test-img data/traffic/task11_origin/data/train_images/13021_1647589563476.png --shape 408 408 --verify --dynamic-export --cfg-options model.test_cfg.deploy_nms_pre=-1 --skip-postprocess
 # 只去除topk和nms
 # 需要修改目标文件
-python tools/deployment/pytorch2onnx.py configs/atss/atss.py checkpoints/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth --output-file checkpoints/atss_coco_no_topk_nms.onnx --input-img /mmdetection/coco/COCO_train2014_000000000009.jpg --test-img /mmdetection/coco/COCO_train2014_000000000009.jpg --shape 608 608 --dynamic-export --cfg-options model.test_cfg.deploy_nms_pre=-1
+# 运行指令去掉了--verify
+python tools/deployment/pytorch2onnx.py configs/atss/atss.py checkpoint/atss_r50_fpn_1x_coco_20200209-985f7bd0.pth --output-file checkpoint/atss_coco_no_topk_nms.onnx --input-img /mmdetection/coco/COCO_train2014_000000000009.jpg --test-img /mmdetection/coco/COCO_train2014_000000000009.jpg --shape 608 608 --dynamic-export --cfg-options model.test_cfg.deploy_nms_pre=-1
 ```
 
 #### no_topk_nms
 
 - 为了生成no topk and nms的onnx模型，但是保留一部分后处理过程，需要修改源码(对应注释掉455-490，在514添加一句with_nms = False
-- mmdetection/mmdet/models/dense_heads/base_dense_head.py  暂时无法在文档外展示此内容
+- mmdetection/mmdet/models/dense_heads/base_dense_head.py  
 - 与no postprocess区别在于：no postprocess.onnx直接输出head的所有每层输出，包括scores、pred boxes、centerness，并且没有经过box decoder以及sigmoid
+- 如果不去掉--verify会报错，原因是验证时由于模型去掉了nms，onnx的输出label会变成[N,80]，而pytorch模型输出的label为[N,]
 
 ```Python
 # 使用no postprocess.onnx进行推理,输出结果的shape，默认图片尺寸为608*608
@@ -65,8 +73,7 @@ len(raw_results) 15
 
 ```Python
 # origin
-python tools/deployment/test.py configs/atss/atss.py checkpoints/atss_r50_fpn_1x_coco.onnx --out workdir/atss.pkl --backend onnxruntime --show-dir workdir --show-score-thr 0.1
-# no postprocess
-# 会报错，resize需要是导出onnx的固定大小
-python tools/deployment/test.py configs/atss/atss.py checkpoints/atss_r50_fpn_1x_coco_no_postprocess.onnx --out workdir/atss.pkl --backend onnxruntime --show-dir workdir --show-score-thr 0.1
+python tools/onnx/onnx_with_postprocess.py
+# manu-nms-topk
+python tools/onnx/onnx_no_topk_nms.py
 ```

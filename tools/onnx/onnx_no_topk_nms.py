@@ -2,10 +2,10 @@ import argparse
 import numpy as np
 import onnxruntime as ort
 import cv2
-import torch
 from PIL import Image
 #打印完整输出 
 import numpy as np
+import time
 np.set_printoptions(threshold=np.inf)
 CLASSES = ('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
                'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
@@ -46,33 +46,35 @@ PALETTE = [(220, 20, 60), (119, 11, 32), (0, 0, 142), (0, 0, 230),
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) an ONNX model using ONNXRuntime')
-    parser.add_argument('--image-path', default='/mmdetection/coco/COCO_train2014_000000000036.jpg',help='test config file path')
-    parser.add_argument('--model', default='/mmdetection/checkpoint/atss_coco_manu_no_topk_nms.onnx',help='Input model file')
-    parser.add_argument('--print-file', help='output result file in pickle format',default='./no_topk_nms.txt')
-
+    parser.add_argument('--image-path', default='/mmdetection/coco/COCO_val2014_000000000400.jpg',help='test config file path')
+    parser.add_argument('--model', default='/mmdetection/checkpoint/atss_coco_no_topk_nms.onnx',help='Input model file')
+    # nms
     parser.add_argument(
-        '--show-dir', default = "./no_topk_nms.jpg",help='directory where painted images will be saved')
+        '--iou-thr', default=0.6,help='directory where painted images will be saved')
     parser.add_argument(
-        '--save-single', action='store_true',help='directory where painted images will be saved')
+        '--topk', default=1000,help='directory where painted images will be saved')
+    parser.add_argument(
+        '--score-thr', default=0.05,help='directory where painted images will be saved')
+    # show
+    parser.add_argument('--print-file', help='output result file in pickle format',default='./no_topk_nms2.txt')
+    parser.add_argument(
+        '--show-dir', default = "./no_topk_nms_thr2.jpg",help='directory where painted images will be saved')
     parser.add_argument(
         '--show-score-thr',
         type=float,
-        default=0.0,
+        default=0.3,
         help='score threshold (default: 0.3)')
     args = parser.parse_args()
 
     return args
 
-def filter_scores_and_topk(scores, score_thr, topk, results=None):
+def filter_scores_and_topk(scores, score_thr, topk):
     """Filter results using score threshold and topk candidates.
 
     Args:
         scores (Tensor): The scores, shape (num_bboxes, K).
         score_thr (float): The score filter threshold.
         topk (int): The number of topk candidates.
-        results (dict or list or Tensor, Optional): The results to
-           which the filtering rule is to be applied. The shape
-           of each item is (num_bboxes, N).
 
     Returns:
         tuple: Filtered results
@@ -83,35 +85,65 @@ def filter_scores_and_topk(scores, score_thr, topk, results=None):
                 (num_bboxes_filtered, ).
             - anchor_idxs (Tensor): The anchor indexes, shape \
                 (num_bboxes_filtered, ).
-            - filtered_results (dict or list or Tensor, Optional): \
-                The filtered results. The shape of each item is \
-                (num_bboxes_filtered, N).
     """
-    valid_mask = scores > score_thr
-    scores = scores[valid_mask]
-    valid_idxs = torch.nonzero(valid_mask)
+    # 返回最大值索引作为label
+    print("before topk",len(scores))  
+    labels = np.argmax(scores,axis=1) # label = np.argsort(scores,axis=1)[:,-1]
+    scores = scores.max(1)
+    mask = scores>score_thr
+    valid_idxs = np.nonzero(mask)[0]
+    idx = np.argsort(scores[valid_idxs])[::-1]
+    topk_idxs = valid_idxs[idx[:topk]]
 
-    num_topk = min(topk, valid_idxs.size(0))
-    # torch.sort is actually faster than .topk (at least on GPUs)
-    scores, idxs = scores.sort(descending=True)
-    scores = scores[:num_topk]
-    topk_idxs = valid_idxs[idxs[:num_topk]]
-    keep_idxs, labels = topk_idxs.unbind(dim=1)
+    labels = labels[topk_idxs]
+    scores = scores[topk_idxs]
+    print("after topk",len(scores)) 
+    return labels,scores,topk_idxs
 
-    filtered_results = None
-    if results is not None:
-        if isinstance(results, dict):
-            filtered_results = {k: v[keep_idxs] for k, v in results.items()}
-        elif isinstance(results, list):
-            filtered_results = [result[keep_idxs] for result in results]
-        elif isinstance(results, torch.Tensor):
-            filtered_results = results[keep_idxs]
-        else:
-            raise NotImplementedError(f'Only supports dict or list or Tensor, '
-                                      f'but get {type(results)}.')
-    return scores, labels, keep_idxs, filtered_results
+def area(bbox):
+    return bbox[::,::,2]*bbox[::,::,3]
 
+def nms(scores,bboxes_offset,iou_thr):
+    ind = [i for i in range(len(scores))]
+    ind = np.array(ind)
+    nms_ind = np.array([]).astype(int)
 
+    while len(bboxes_offset)>0:
+        if len(bboxes_offset)==1:
+            nms_ind = np.append(nms_ind,ind[0])
+            break
+        nms_ind = np.append(nms_ind,ind[0])
+
+        bbox = bboxes_offset[0,:][None,:][None,:]
+        bboxes = bboxes_offset[1:,:][:,None]
+        x11 = bboxes[::,::,0]-0.5* bboxes[::,::,2]
+        y11 = bboxes[::,::,1]-0.5* bboxes[::,::,3]
+        x12 = bboxes[::,::,0]+0.5* bboxes[::,::,2]
+        y12 = bboxes[::,::,1]+0.5* bboxes[::,::,3]
+        x21 = bbox[::,::,0]-0.5* bbox[::,::,2]
+        y21 = bbox[::,::,1]-0.5* bbox[::,::,3]
+        x22 = bbox[::,::,0]+0.5* bbox[::,::,2]
+        y22 = bbox[::,::,1]+0.5* bbox[::,::,3]
+        x1 = np.maximum(x11,x21)
+        y1 = np.maximum(y11,y21)
+        x2 = np.minimum(x12,x22)
+        y2 = np.minimum(y12,y22)
+        # 求出第一个box与余下所有box的iou
+        inter = np.clip((x2-x1)*(y2-y1),0,max((x2-x1)*(y2-y1)))
+        iou = inter/(area(bbox)+area(bboxes)-inter)
+        # 取出iou小于iou_thr的行索引
+        valid_idx = np.nonzero(iou<iou_thr)[0]
+        # 因为索引0已经被选出来了，所以这里索引+1    
+        bboxes_offset = bboxes_offset[valid_idx+1]
+        ind = ind[valid_idx+1]
+    print("nms",len(nms_ind))    
+    return nms_ind
+
+def batch_nms(scores,labels,bboxes,iou_thr):
+    max_coordinate = bboxes.max()
+    offset = labels*(max_coordinate+1)
+    bboxes_offset = bboxes+offset[:,None]
+    return nms(scores,bboxes_offset,iou_thr)
 
 def main():
     args = parse_args()
@@ -125,8 +157,6 @@ def main():
     # 直接使用无后处理模型进行推理
     img = cv2.imread(args.image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # 生成onnx用的是多大尺寸。这里就得是多大
-    img = cv2.resize(img, (608, 608)) # np.array
 
     img = img.astype('float32')/225.0
     img = (img - mean)/ std
@@ -144,18 +174,35 @@ def main():
 
     pred_bboxes,pred_scores = raw_results
     
-    # (1, 7706, 4)
-    # (1, 7706, 80)
+    # (1, 6540, 4)
+    # (1, 6540, 80)
     pred_bboxes = pred_bboxes[0]
     pred_scores = pred_scores[0]
+    start = time.time()
+    labels,scores,topk_idxs = filter_scores_and_topk(pred_scores,score_thr=args.score_thr,topk=args.topk)
+    bboxes = pred_bboxes[topk_idxs]
+    ind = batch_nms(scores,labels,bboxes,args.iou_thr)
+    print(time.time()-start)
+    nms_bboxes = bboxes[ind]
+    nms_labels = labels[ind]
+    nms_scores = scores[ind]
 
-    
-    # # show results
-    # from mmdet.core.visualization import imshow_det_bboxes
-    # imshow_det_bboxes(img = img1[:,:,::-1],bboxes=bboxes,labels=labels,class_names=CLASSES,
-    #                     score_thr=args.show_score_thr,bbox_color=PALETTE,text_color=PALETTE,out_file=args.show_dir)
+    # 显示nms后的框具体信息
+    if args.print_file:
+        print("~~~~~~~~~~~~~~~~\nnms_bboxes:\n",nms_bboxes,file=open(args.print_file,'a'))
+        print("~~~~~~~~~~~~~~~~\nnms_scores:\n",nms_scores,file=open(args.print_file,'a'))
+        print("~~~~~~~~~~~~~~~~\nnms_labels:\n",nms_labels,file=open(args.print_file,'a'))
+    # 将bbox和scores concat方便显示
+    if args.show_dir:
+        bboxes_scores = np.concatenate((nms_bboxes,nms_scores[:,None]),axis=1)
+        # show results
+        from mmdet.core.visualization import imshow_det_bboxes
+        # image读入是BGR
+        imshow_det_bboxes(img = img1[:,:,::-1],bboxes=bboxes_scores,labels=nms_labels,class_names=CLASSES,
+                            score_thr=args.show_score_thr,bbox_color=PALETTE,text_color=PALETTE,out_file=args.show_dir)
 
 
 if __name__=="__main__":
     main()
+    print("over!")
     

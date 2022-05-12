@@ -42,16 +42,16 @@ PALETTE = [(220, 20, 60), (119, 11, 32), (0, 0, 142), (0, 0, 230),
 def parse_args():
     parser = argparse.ArgumentParser(
         description='MMDet test (and eval) an ONNX model using ONNXRuntime')
-    parser.add_argument('--image-path', default='/mmdetection/coco/COCO_train2014_000000000036.jpg',help='test config file path')
+    parser.add_argument('--image-path', default='/mmdetection/coco/COCO_val2014_000000000400.jpg',help='test config file path')
     parser.add_argument('--model', default='/mmdetection/checkpoint/atss_coco_with_nms.onnx',help='Input model file')
-    parser.add_argument('--print-file', default="with_postprocess.txt",help='output result file in pickle format')
+    parser.add_argument('--print-file', default="with_postprocess2.txt",help='output result file in pickle format')
 
     parser.add_argument(
-        '--show-dir', default = "./with_postprocess.jpg",help='directory where painted images will be saved')
+        '--show-dir', default = "./with_postprocess2.jpg",help='directory where painted images will be saved')
     parser.add_argument(
         '--show-score-thr',
         type=float,
-        default=0.0,
+        default=0.3,
         help='score threshold (default: 0.3)')
     args = parser.parse_args()
 
