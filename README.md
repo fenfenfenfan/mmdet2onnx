@@ -5,11 +5,12 @@
 - 完成onnx模型转换
 - 实现后处理Topk以及NMS
 - 可视化结果
-<center class="half">
-<img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/no_topk_nms_thr1.jpg?raw=true" width="200" img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/with_postprocess1.jpg?raw=true" width="200"/>
-<center class="half">
-<img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/no_topk_nms_thr2.jpg?raw=true" width="200"/><img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/with_postprocess2.jpg?raw=true" width="200"/>
-</center>
+<figure class="third">
+<img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/no_topk_nms_thr1.jpg?raw=true" width="600"/><img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/with_postprocess1.jpg?raw=true" width="600"/>
+</figure>
+<figure class="third">
+<img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/no_topk_nms_thr2.jpg?raw=true" width="600"/><img src="https://github.com/fenfenfenfan/mmdet2onnx/blob/master/with_postprocess2.jpg?raw=true" width="600"/>
+</figure>
 
 # 1.生成onnx文件（ATSS）
 
