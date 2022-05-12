@@ -6,7 +6,7 @@ ONNX
 - 实现后处理Topk以及NMS
 - 可视化结果
 
-
+!(/mmdetection/no_topk_nms_thr1.jpg)
 
 # 1.生成onnx文件（ATSS）
 
